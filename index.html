@@ -4377,9 +4377,11 @@ function maybeAutoWheel() { if (wheelFree()) setTimeout(() => toast('Your free L
 
 // ---------- HOT STREAK ----------
 const STREAK_GIFTS = ['rocket', 'bomb', 'rainbow'];
+const streakGifts = () => STREAK_GIFTS.map(k => (typeof spGift === 'function' ? spGift(k) : k));
+const streakNames = n => { const c = {}; streakGifts().slice(0, n).forEach(k => (c[k] = (c[k] || 0) + 1)); return Object.entries(c).map(([k, m]) => (m > 1 ? `${m} ${ITEMS[k].name}s` : ITEMS[k].name)).join(' + '); };
 function streakHTML() {
-  return `<div class="streak"><div class="stT">Hot Streak</div><div class="stRow">${STREAK_GIFTS.map((k, i) => `<span class="${i < S.streak ? 'lit' : ''}">${img(ITEMS[k].icon, '', 96)}</span>`).join('')}</div>
-    <div class="stS">${S.streak ? `Free on start: ${STREAK_GIFTS.slice(0, S.streak).map(k => ITEMS[k].name).join(' + ')}` : 'Win levels in a row for free power-ups'}</div></div>`;
+  return `<div class="streak"><div class="stT">Hot Streak</div><div class="stRow">${streakGifts().map((k, i) => `<span class="${i < S.streak ? 'lit' : ''}">${img(ITEMS[k].icon, '', 96)}</span>`).join('')}</div>
+    <div class="stS">${S.streak ? `Free on start: ${streakNames(S.streak)}` : 'Win levels in a row for free power-ups'}</div></div>`;
 }
 function breakStreak() { if (G && !G.def.daily && !G.def.frenzy && S.streak) { S.streak = 0; saveGame(); } }
 
@@ -9900,7 +9902,7 @@ function win() {
     <div class="score stk">Score ${G.score.toLocaleString()}${newBest && prevBest ? ' <span class="newbest">New Best!</span>' : ''}</div>${!newBest ? `<div class="sub small">Your best: ${prevBest.toLocaleString()}</div>` : ''}
     <div class="sub small">${boss || gchest ? 'Treasure chest!' : 'Rewards'}</div><div class="rewards">${rw.join('')}</div>
     ${unl.length ? `<div class="unlock">${img(unl[0], '', 140)}<div><b>New on your farm!</b><span>${unl.map(k => BLD[k].name).join(', ')} unlocked</span></div></div>` : seeds.length && featOn('farm') ? '<div class="sub small">Plant your seeds on the Farm!</div>' : ''}
-    ${x8.html}${streakUp ? `<div class="sub small">Hot Streak ${S.streak}! Next level starts with ${STREAK_GIFTS.slice(0, S.streak).map(k => ITEMS[k].name).join(' + ')}</div>` : ''}
+    ${x8.html}${streakUp ? `<div class="sub small">Hot Streak ${S.streak}! Next level starts with ${streakNames(S.streak)}</div>` : ''}
     <div class="btns"><button class="btn orange" data-m>Map</button><button class="btn big" data-n>Next</button></div>`);
   setTimeout(() => confetti(stars === 3 || boss || golden ? 200 : 110), 200);
   [1, 2, 3].forEach(s => { if (s <= stars) setTimeout(() => SFX.star(s), (200 + s * 280) * TIME_SCALE); });
