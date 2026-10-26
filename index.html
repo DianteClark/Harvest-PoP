@@ -890,6 +890,10 @@ p.small{font-size:13px;margin:4px 0}
 .allBtn{margin-left:4px;padding-left:8px;padding-right:8px}
 .pill.bump{animation:bump .4s}
 @media (prefers-reduced-motion:reduce){.bfly,.gballoon>img:first-child{animation:none}}
+
+/* ===== Update 19 ===== */
+.partTag{display:flex;align-items:center;gap:6px;justify-content:center;font-size:12px;background:linear-gradient(90deg,#e4f4ff,#fff);border-radius:12px;padding:4px 10px;margin:4px auto;max-width:320px;box-shadow:0 0 0 2px #8ac8ff}.partTag img{width:24px}
+.ptwo{position:absolute;top:-6px;left:-6px;width:22px;height:22px;border-radius:50%;background:#2f8ad8;border:2px solid #fff;box-shadow:0 0 0 2px var(--ink);font-size:13px;display:flex;align-items:center;justify-content:center;color:#fff}
 </style>
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="icon" type="image/png" href="icons/favicon.png">
@@ -3658,6 +3662,7 @@ function genLevel(n, seed) {
   { let vc = 0; g.forEach(row => row.forEach(ch => { if (ch === 'v' || ch === 'V') vc++; })); if (vc > 18) for (const row of g) for (let c = 0; c < cols; c++) if (row[c] === 'V') row[c] = 'v'; }
   const belts = !boss && !golden && n > 50 && R() < 0.35 ? (R() < 0.5 ? [{ r: 3, dir: 1 }] : [{ r: 3, dir: 1 }, { r: 5, dir: -1 }]) : null;
   if (belts) for (const bl of belts) g[bl.r] = g[bl.r].map(ch => (ch === 'x' ? '.' : 'ih'.includes(ch) ? '.' : ch));
+  const shape = !boss && !golden && !belts && n > 70 ? boardShape(g, rows, cols, seed == null ? n : seed) : null;
   // keep the board playable: no blockers in spawn cells, at least 2 open cells per row
   const isBlk = ch => 'cCKrRwl123456T'.includes(ch);
   for (let c = 0; c < cols; c++) { const top = g.findIndex(row => row[c] !== 'x'); if (top >= 0 && isBlk(g[top][c])) g[top][c] = '.'; }
@@ -3692,7 +3697,7 @@ function genLevel(n, seed) {
   if (colors === 8 && types.length >= 2) colors = 7;
   if (seed == null && n === 71) colors = 7;
   if (seed == null && n === 131) colors = 8;
-  const def = { map, colors, goals, seeds, gen: true };
+  const def = { map, colors, goals, seeds, gen: true, shape };
   if (belts) def.belts = belts;
   if (golden) return Object.assign(def, { golden: true, goldN: 20 + Math.min(10, Math.floor(n / 50) * 2), goals: ['gold'], colors: 5, moves: 24 });
   if (boss) {
@@ -4118,33 +4123,8 @@ function openPlant(i) {
   });
 }
 function costOf(k) { const c = BLD[k].cost; return c[Math.min(countB(k), c.length - 1)]; }
-function openBuild(i) {
-  const kinds = Object.keys(BLD).filter(k => k !== 'kitchen' && k !== 'stand' && !BLD[k].debris && !BLD[k].set);
-  const rows = kinds.map(k => {
-    const d = BLD[k], n = countB(k), lockd = !unlocked(k), maxed = n >= d.max, cost = costOf(k);
-    let right;
-    if (lockd) right = `<span class="lockmsg">${lockReason(k)}</span>`;
-    else if (maxed) right = `<span class="lockmsg">Max ${d.max}</span>`;
-    else right = `<button class="btn sm ${S.coins < cost ? 'gray' : 'orange'}" data-b="${k}">${img('coin', 'mini', 64)}${cost}</button>`;
-    const info = d.decor ? `Decoration &middot; +${d.decor}% charm` : d.craft ? d.desc : d.prod ? `Makes ${d.prod === 'coin' ? 'coins' : RES[d.prod].name.toLowerCase()} every ${fmtTime(d.per)}` : d.desc;
-    return `<div class="seedRow ${lockd ? 'locked' : ''}">${img(k, 'pk', 140)}<div class="sinfo"><b>${d.name}</b><span>${info}</span></div>${right}</div>`;
-  }).join('');
-  const shop = featOn('decor') ? `<button class="btn blue decoBtn" data-shop>${img('lantern', 'bi', 64)} Decor Shop: themed sets</button>` : '';
-  const el = popup(`<button class="xbtn" data-x>${SVG.close}</button><div class="ribbon stk">Build</div>${shop}<div class="seedList">${rows}</div>`);
-  el.querySelector('[data-x]').onclick = () => { SFX.click(); closePop(); };
-  const sb = el.querySelector('[data-shop]'); if (sb) sb.onclick = () => { SFX.click(); openDecorShop(i); };
-  el.querySelectorAll('[data-b]').forEach(b => b.onclick = () => {
-    const k = b.dataset.b, cost = costOf(k);
-    if (S.coins < cost) { toast('Not enough coins yet!'); return; }
-    tickAll();
-    S.coins -= cost;
-    S.farm.tiles[i] = { b: k, lvl: 1, t: Date.now(), stock: 0 };
-    addXP(Math.max(3, Math.round(cost / 25))); stat('built');
-    saveGame(); SFX.plant(); SFX.coin(); closePop(); buildFarm();
-    const t = $(`#fgrid .tile[data-i="${i}"]`); if (t) t.classList.add('pop');
-    if (k === 'field') setTimeout(() => openPlant(i), 400);
-  });
-}
+// the build menu lives in update11.js
+let openBuild;
 function upCost(x) { return BLD[x.b].up * Math.pow(2, x.lvl - 1); }
 function openBuilding(i) {
   const x = S.farm.tiles[i], d = BLD[x.b];
@@ -4259,6 +4239,7 @@ function ensureMeta() {
 // reward: {coins, gems, items:{k:n}, seeds:n, res:{k:n}}
 function grant(r) {
   const chips = [];
+  if (r.items && typeof gateItems === 'function') r = Object.assign({}, r, { items: gateItems(r.items) });
   if (r.coins) { S.coins += r.coins; chips.push(['coin', '+' + r.coins]); }
   if (r.gems) { S.gems += r.gems; chips.push(['gem', '+' + r.gems]); }
   for (const [k, n] of Object.entries(r.items || {})) { S.items[k] += n; chips.push([ITEMS[k].icon, '+' + n]); }
@@ -4927,7 +4908,7 @@ function resetAll() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
   MUSIC.stop();
   G = null; EDIT.on = false; EDIT.sel = null; show.dailyShown = false;
-  S = defaultSave(); ensureFarm(); ensureMeta(); ensureU4(); ensureU5(); ensureU7(); ensureU8(); ensureU9(); ensureU10(); ensureU11(); ensureU13(); ensureU14(); ensureU15(); ensureU16(); ensureU17(); ensureU18(); tickOrders(); refreshPetUI(); FV.fitted = false; SFX.applyVol();
+  S = defaultSave(); ensureFarm(); ensureMeta(); ensureU4(); ensureU5(); ensureU7(); ensureU8(); ensureU9(); ensureU10(); ensureU11(); ensureU13(); ensureU14(); ensureU15(); ensureU16(); ensureU17(); ensureU18(); ensureU19(); tickOrders(); refreshPetUI(); FV.fitted = false; SFX.applyVol();
   saveGame(); closePop();
   $('#editBar').classList.remove('on');
   buildSide(); show('scrTitle'); TT.pops = 0; $('#tpops').classList.remove('on');
@@ -4945,75 +4926,15 @@ const STICKER_SETS = [
   { id: 'boss', name: 'Big Bosses', items: ['grub', 'crow', 'locust', 'mole', 'raccoon'], rare: true },
 ];
 const SET_REW = { gems: 10, coins: 300, items: { rainbow: 1 } }, BOSS_SET_REW = { gems: 25, coins: 600, items: { rainbow: 2, tractor: 2 } };
-function rollSticker() {
-  const pool = [];
-  for (const s of STICKER_SETS) for (const k of s.items) pool.push([k, s.rare ? 1 : 4]);
-  let t = rnd() * pool.reduce((a, p) => a + p[1], 0);
-  for (const [k, w] of pool) { t -= w; if (t <= 0) return k; }
-  return 'f0';
-}
+// sticker rolls, packs and the book live in update16.js
+let rollSticker, openBook, openPack, openStarChest;
 const stickerCount = () => Object.keys(S.stk).length;
 let totalStickers = STICKER_SETS.reduce((a, s) => a + s.items.length, 0);
-function openBook() {
-  const sets = STICKER_SETS.map(s => {
-    const got = s.items.filter(k => S.stk[k]).length, done = S.setsDone[s.id];
-    return `<div class="sset ${done ? 'done' : ''}"><div class="ssh"><b>${s.name}</b><span>${got}/${s.items.length}</span>${done ? `<i class="ck">${SVG.check}</i>` : `<span class="srw">${img('gem', '', 48)}${(s.rare ? BOSS_SET_REW : SET_REW).gems}</span>`}</div>
-      <div class="sgrid">${s.items.map(k => `<div class="stkr ${S.stk[k] ? '' : 'miss'}">${img(k, '', 112)}${S.stk[k] > 1 ? `<span class="sx">x${S.stk[k]}</span>` : ''}</div>`).join('')}</div></div>`;
-  }).join('');
-  const el = popup(`<button class="xbtn" data-x>${SVG.close}</button><div class="ribbon green stk">Sticker Book</div>
-    <div class="sub small">${stickerCount()} of ${totalStickers} stickers &middot; finish a set for a big prize</div>
-    ${S.packs ? `<div class="btns"><button class="btn big orange" data-open>${img('pack', 'bi', 64)} Open pack (${S.packs})</button></div>` : '<div class="sub small">Win levels, open chests and spin the wheel for more packs.</div>'}
-    <div class="book">${sets}</div>`);
-  el.querySelector('[data-x]').onclick = () => { SFX.click(); closePop(); };
-  const o = el.querySelector('[data-open]'); if (o) o.onclick = () => openPack();
-}
-function openPack() {
-  if (!S.packs) return;
-  S.packs--;
-  const pulls = [rollSticker(), rollSticker(), rollSticker()];
-  let dupeCoins = 0;
-  const cards = pulls.map((k, i) => {
-    const isNew = !S.stk[k];
-    S.stk[k] = (S.stk[k] || 0) + 1;
-    if (!isNew) dupeCoins += 5;
-    return `<div class="pcardS" style="animation-delay:${0.25 + i * 0.35}s">${img(k, '', 160)}${isNew ? '<span class="newtag stk">NEW</span>' : '<span class="dupetag">+5 coins</span>'}</div>`;
-  }).join('');
-  S.coins += dupeCoins;
-  const finished = STICKER_SETS.filter(s => !S.setsDone[s.id] && s.items.every(k => S.stk[k]));
-  saveGame(); updateTop(); refreshSide();
-  SFX.make(); [0, 1, 2].forEach(i => setTimeout(() => SFX.star(i), (250 + i * 350) * TIME_SCALE));
-  const el = popup(`<div class="ribbon stk">Sticker Pack!</div><div class="packRow">${cards}</div>
-    <div class="btns">${S.packs ? `<button class="btn orange" data-more>Open another (${S.packs})</button>` : ''}<button class="btn" data-ok>Collect</button></div>`);
-  setTimeout(() => confetti(80), 900);
-  const after = () => {
-    if (finished.length) {
-      const s = finished[0]; S.setsDone[s.id] = 1;
-      const chips = grant(s.rare ? BOSS_SET_REW : SET_REW); SFX.win(); confetti(240);
-      ask(`<div class="ribbon green stk">Set Complete!</div><div class="sub">${s.name}</div><div class="setDone">${s.items.map(k => img(k, '', 112)).join('')}</div><div class="rewards">${chips}</div>`,
-        [{ label: 'Amazing!', v: 'ok' }]).then(openBook);
-    } else openBook();
-  };
-  el.querySelector('[data-ok]').onclick = () => { SFX.click(); after(); };
-  const m = el.querySelector('[data-more]'); if (m) m.onclick = () => { SFX.click(); if (finished.length) after(); else openPack(); };
-}
 
 // ---------- STAR CHESTS ----------
 const STARS_PER_CHEST = 15;
 const totalStars = () => Object.values(S.stars).reduce((a, b) => a + b, 0);
 const chestReady = () => totalStars() >= (S.starChests + 1) * STARS_PER_CHEST;
-function openStarChest() {
-  const need = (S.starChests + 1) * STARS_PER_CHEST, have = totalStars();
-  if (!chestReady()) {
-    ask(`<div class="ribbon stk">Star Chest</div><div class="introImg">${img('chest', '', 200)}</div>
-      <div class="sub">${have - S.starChests * STARS_PER_CHEST} / ${STARS_PER_CHEST} stars</div><div class="gbar big"><i style="width:${Math.min(100, ((have - S.starChests * STARS_PER_CHEST) / STARS_PER_CHEST) * 100)}%"></i></div>
-      <p>Earn stars by beating levels. Replay old levels for 3 stars to fill it faster!</p>`, [{ label: 'OK', v: 'ok' }]);
-    return;
-  }
-  S.starChests++;
-  const chips = grant({ coins: 100 + S.starChests * 20, gems: 3, pack: 2 });
-  SFX.win(); confetti(200);
-  ask(`<div class="ribbon green stk">Star Chest!</div><div class="introImg">${img('chest', '', 200)}</div><div class="rewards">${chips}</div>`, [{ label: 'Sweet!', v: 'ok' }]).then(refreshSide);
-}
 
 // ---------- FESTIVAL (weekly event) ----------
 const weekNo = () => Math.floor((Date.now() / 864e5 + 3) / 7);
@@ -5201,42 +5122,8 @@ function merchDeals() {
   return out;
 }
 const merchNew = () => S.merch && S.merch.seen !== merchBlk();
-function canPay(g) {
-  if (g.coins && S.coins < g.coins) return false;
-  if (g.gems && S.gems < g.gems) return false;
-  for (const [k, n] of Object.entries(g.res || {})) if ((S.res[k] || 0) < n) return false;
-  return true;
-}
-function chipsHTML(r) {
-  const out = [];
-  if (r.coins) out.push(['coin', r.coins]); if (r.gems) out.push(['gem', r.gems]);
-  for (const [k, n] of Object.entries(r.res || {})) out.push([k, n]);
-  for (const [k, n] of Object.entries(r.items || {})) out.push([ITEMS[k].icon, n]);
-  if (r.pack) out.push(['pack', r.pack]); if (r.seeds) out.push(['pk_carrot', r.seeds]);
-  return out.map(([k, n]) => `<span class="dchip">${img(k, '', 64)}${n}</span>`).join('');
-}
-function openMerchant() {
-  ensureU5();
-  if (S.merch.blk !== merchBlk()) S.merch = { blk: merchBlk(), bought: [], seen: merchBlk() };
-  S.merch.seen = merchBlk(); saveGame(); renderFarmHead();
-  const left = (merchBlk() + 1) * 4 * 3600e3 - Date.now();
-  const rows = merchDeals().map((d, i) => {
-    const sold = S.merch.bought.includes(i), ok = canPay(d.give);
-    return `<div class="deal ${sold ? 'sold' : ''}"><div class="dgive">${chipsHTML(d.give)}</div><span class="arrow">&rarr;</span><div class="dget">${chipsHTML(d.get)}</div>
-      ${sold ? '<span class="lockmsg">Sold</span>' : `<button class="btn sm ${ok ? 'orange' : 'gray'}" data-d="${i}">Trade</button>`}</div>`;
-  }).join('');
-  const el = popup(`<button class="xbtn" data-x>${SVG.close}</button><div class="ribbon stk">Traveling Merchant</div>
-    <div class="profTop">${img('fox', 'pav', 160)}<p>"Fresh deals from far-off farms! New stock in ${fmtTime(left / 1000)}."</p></div>
-    <div class="deals">${rows}</div>`);
-  el.querySelector('[data-x]').onclick = () => { SFX.click(); closePop(); };
-  el.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
-    const i = +b.dataset.d, d = merchDeals()[i];
-    if (!canPay(d.give)) { toast("You don't have enough for that trade yet."); return; }
-    if (d.give.coins) S.coins -= d.give.coins; if (d.give.gems) S.gems -= d.give.gems;
-    for (const [k, n] of Object.entries(d.give.res || {})) S.res[k] -= n;
-    S.merch.bought.push(i); grant(d.get); SFX.coin(); SFX.make(); confetti(60, b); updateTop(); renderInv(); openMerchant();
-  });
-}
+// the merchant screen lives in update16.js
+let openMerchant;
 
 // ---------- FARM AMBIENCE ----------
 setInterval(() => {
@@ -5460,7 +5347,7 @@ function applyCloud(obj) {
   const def = defaultSave();
   S = Object.assign(def, obj);
   S.seeds = Object.assign(defaultSave().seeds, obj.seeds); S.items = Object.assign(defaultSave().items, obj.items);
-  ensureFarm(); ensureMeta(); ensureU4(); ensureU5(); ensureU7(); ensureU8(); ensureU9(); ensureU10(); ensureU11(); ensureU13(); ensureU14(); ensureU15(); ensureU16(); ensureU17(); ensureU18(); tickOrders(); FV.fitted = false;
+  ensureFarm(); ensureMeta(); ensureU4(); ensureU5(); ensureU7(); ensureU8(); ensureU9(); ensureU10(); ensureU11(); ensureU13(); ensureU14(); ensureU15(); ensureU16(); ensureU17(); ensureU18(); ensureU19(); tickOrders(); FV.fitted = false;
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(S)); } catch (e) {}
   SFX.applyVol(); updateTop(); buildSide();
   if (CUR === 'scrTitle') refreshTitle(); else if (CUR === 'scrMap') { $('#mapInner').dataset.sig = ''; show('scrMap'); } else if (CUR === 'scrFarm') show('scrFarm');
@@ -5721,7 +5608,7 @@ function u8Win(n, boss, first, stars) {
 
 // ---------- MAP POPUP QUEUE ----------
 async function u8MapQueue() {
-  if (S.ver < 18 && S.lvl > 1) { const old = S.ver; S.ver = 18; saveGame(); if (old < 14) await whatsNew14(); if (old < 15) await whatsNew15(); if (old < 16) await whatsNew16(); if (old < 17) await whatsNew17(); await whatsNew18(); }
+  if (S.ver < 19 && S.lvl > 1) { const old = S.ver; S.ver = 19; saveGame(); if (old < 14) await whatsNew14(); if (old < 15) await whatsNew15(); if (old < 16) await whatsNew16(); if (old < 17) await whatsNew17(); if (old < 18) await whatsNew18(); await whatsNew19(); }
   const open = [], crowns = [];
   for (let k = 0; regionDone(k); k++) { if (!S.rch[k]) open.push(k); if (!S.crown[k] && regionCrown(k)) crowns.push(k); }
   if (open.length && CUR === 'scrMap') {
@@ -5812,25 +5699,8 @@ const PW = {
   rain: { name: 'Rainbow Seed', icon: 'rain', lv: ['Clears every fruit of one kind', 'Each hit also splashes a neighbor', 'Splashes, then grows 3 bonus Rockets'] },
 };
 const PW_COST = [null, null, { coins: 400 }, { coins: 1200, gems: 15 }];
-function openLab() {
-  if (!featOn('lab')) { toast(`The Power Lab opens at level ${FEAT.lab.lvl}!`); return; }
-  const rows = Object.entries(PW).map(([k, p]) => {
-    const l = pwLvl(k), next = l < 3 ? PW_COST[l + 1] : null;
-    const poor = next && (S.coins < next.coins || S.gems < (next.gems || 0));
-    const btn = next ? `<button class="btn sm labBtn ${poor ? 'gray' : 'orange'}" data-up="${k}"><span>${img('coin', 'mini', 64)}${next.coins}</span>${next.gems ? `<span>${img('gem', 'mini', 64)}${next.gems}</span>` : ''}</button>` : `<span class="lockmsg petAct">Maxed!</span>`;
-    return `<div class="seedRow labRow">${img(p.icon, 'pk', 140)}<div class="sinfo"><b>${p.name}</b><span class="pips"><em>Lv ${l}</em>${[1, 2, 3].map(i => `<i class="${i <= l ? 'on' : ''}"></i>`).join('')}</span><span>${p.lv[l - 1]}</span>${next ? `<span class="nxt">Next: ${p.lv[l]}</span>` : ''}</div>${btn}</div>`;
-  }).join('');
-  const el = popup(`<button class="xbtn" data-x>${SVG.close}</button><div class="ribbon purple stk">Power Lab</div><div class="sub small">Upgrades work every time you make that power-up.</div>
-    <div class="seedList">${rows}</div><div class="btns"><button class="btn blue" data-guide>${img('bolt', 'bi', 64)} Power-Up Guide</button></div>`);
-  el.querySelector('[data-x]').onclick = () => { SFX.click(); closePop(); };
-  el.querySelector('[data-guide]').onclick = () => { SFX.click(); openGuide(openLab); };
-  el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => {
-    const k = b.dataset.up, l = pwLvl(k), c = PW_COST[l + 1];
-    if (S.coins < c.coins || S.gems < (c.gems || 0)) { toast('Not enough yet! Keep playing and farming.'); return; }
-    S.coins -= c.coins; S.gems -= c.gems || 0; S.pw[k] = l + 1; saveGame(); updateTop();
-    SFX.levelUp(); confetti(120); toast(`${PW[k].name} is now level ${l + 1}!`); openLab();
-  });
-}
+// the Power Lab screen lives in update16.js
+let openLab;
 
 // ---------- POWER-UP GUIDE ----------
 function openGuide(back) {
@@ -6439,7 +6309,7 @@ function ensureU13() {
 function mysteryBreak(cell, pos) {
   SFX.make(); burst(pos.x, pos.y, '#d8b4ff', 14, { star: true, sp: 1.2 });
   if (rnd() < 0.72) {
-    const sp = pick(['rh', 'rv', 'bomb', 'bee', 'bomb', 'rh']);
+    const sp = spPick(['rh', 'rv', 'bomb', 'bee', 'bomb', 'rh']);
     setTimeout(() => {
       if (!G || cell.piece) return;
       cell.piece = newPiece('s', { sp, x: cell.c, y: cell.r, born: 0 });
@@ -6606,7 +6476,7 @@ function ensureU14() {
 const cosOn = cat => (S.cos && S.cos.on[cat]) || Object.keys(COS[cat])[0];
 const cosOwned = (cat, k) => !!(COS[cat][k].free || (S.cos && S.cos.own[cat] && S.cos.own[cat].includes(k)));
 const cosCount = () => Object.keys(COS).reduce((a, cat) => a + Object.keys(COS[cat]).filter(k => !COS[cat][k].free && cosOwned(cat, k)).length, 0);
-const boardTheme = () => COS.board[cosOn('board')] || COS.board.wood;
+const boardTheme = () => (typeof regionBoard === 'function' && regionBoard()) || COS.board[cosOn('board')] || COS.board.wood;
 
 // ---------- THEMED SCENERY ----------
 const THEME_BG_CACHE = {};
@@ -6685,10 +6555,6 @@ function dealToday() {
   const [cat, k] = list[Math.floor(R() * list.length)], it = COS[cat][k];
   return { cat, k, it, price: it.gems ? { gems: Math.ceil(it.gems * 0.6) } : { coins: Math.ceil((it.coins * 0.6) / 10) * 10 } };
 }
-const SUPPLIES = [
-  { k: 'rocket', coins: 150 }, { k: 'bomb', coins: 250 }, { k: 'rainbow', coins: 450 }, { k: 'shovel', coins: 120 },
-  { k: 'glove', coins: 200 }, { k: 'duster', coins: 300 }, { k: 'tractor', coins: 250 }, { k: 'moves', coins: 200 },
-];
 const EXCHANGE = [{ gems: 10, give: { coins: 300 } }, { gems: 30, give: { coins: 1000 } }, { gems: 80, give: { coins: 3000 } }, { coins: 1500, give: { gems: 5 } }];
 function canPay(p) { return S.coins >= (p.coins || 0) && S.gems >= (p.gems || 0); }
 function pay(p) { S.coins -= p.coins || 0; S.gems -= p.gems || 0; S.stats.spent = (S.stats.spent || 0) + (p.coins || 0) + (p.gems || 0) * 30; }
@@ -6732,11 +6598,6 @@ function openShop() {
   el.querySelectorAll('[data-buy]').forEach(b => b.onclick = e => { e.stopPropagation(); buy(SHOP_TAB, b.dataset.buy, priceOf(COS[SHOP_TAB][b.dataset.buy])); });
   el.querySelectorAll('[data-eq]').forEach(b => b.onclick = e => { e.stopPropagation(); S.cos.on[SHOP_TAB] = b.dataset.eq; saveGame(); SFX.make(); cosChanged(SHOP_TAB); stopPreviews(); openShop(); });
   const db = el.querySelector('[data-deal]'); if (db) db.onclick = () => buy(deal.cat, deal.k, deal.price);
-  el.querySelectorAll('[data-sup]').forEach(b => b.onclick = () => {
-    const s = SUPPLIES.find(x => x.k === b.dataset.sup);
-    if (S.coins < s.coins) { toast('Not enough coins yet!'); return; }
-    pay({ coins: s.coins }); S.items[s.k] = (S.items[s.k] || 0) + 1; saveGame(); updateTop(); SFX.coin(); toast(`+1 ${ITEMS[s.k].name}`); openShop();
-  });
   el.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => {
     const x = EXCHANGE[+b.dataset.ex];
     if (!canPay(x)) { toast(x.gems ? 'Not enough gems yet!' : 'Not enough coins yet!'); return; }
@@ -6883,28 +6744,6 @@ const PW_GOODS = {
   bee: [null, null, { honey: 3, sunflower: 2 }, { cake: 1, honey: 4 }],
   rain: [null, null, { strawberry: 4, milk: 2 }, { smoothie: 2, cake: 1 }],
 };
-openLab = function () {
-  if (!featOn('lab')) { toast(`The Power Lab opens at level ${FEAT.lab.lvl}!`); return; }
-  const rows = Object.entries(PW).map(([k, p]) => {
-    const l = pwLvl(k), next = l < 3 ? PW_COST[l + 1] : null, goods = l < 3 ? PW_GOODS[k][l + 1] : null;
-    const ok = next && S.coins >= next.coins && S.gems >= (next.gems || 0) && have(goods);
-    const gtxt = goods ? `<span class="needs">${Object.entries(goods).map(([r, q]) => `<span class="need ${(S.res[r] || 0) >= q ? '' : 'short'}">${img(r, '', 64)}${S.res[r] || 0}/${q}</span>`).join('')}</span>` : '';
-    const btn = next ? `<button class="btn sm labBtn ${ok ? 'orange' : 'gray'}" data-up="${k}"><span>${img('coin', 'mini', 64)}${next.coins}</span>${next.gems ? `<span>${img('gem', 'mini', 64)}${next.gems}</span>` : ''}</button>` : `<span class="lockmsg petAct">Maxed!</span>`;
-    return `<div class="seedRow labRow">${img(p.icon, 'pk', 140)}<div class="sinfo"><b>${p.name}</b><span class="pips"><em>Lv ${l}</em>${[1, 2, 3].map(i => `<i class="${i <= l ? 'on' : ''}"></i>`).join('')}</span><span>${p.lv[l - 1]}</span>${next ? `<span class="nxt">Next: ${p.lv[l]}</span>${gtxt}` : ''}</div>${btn}</div>`;
-  }).join('');
-  const el = popup(`<button class="xbtn" data-x>${SVG.close}</button><div class="ribbon purple stk">Power Lab</div><div class="sub small">Upgrades use coins plus goods from your farm. Combos get stronger too!</div>
-    <div class="seedList">${rows}</div><div class="btns"><button class="btn blue" data-guide>${img('bolt', 'bi', 64)} Power-Up Guide</button></div>`);
-  el.querySelector('[data-x]').onclick = () => { SFX.click(); closePop(); };
-  el.querySelector('[data-guide]').onclick = () => { SFX.click(); openGuide(openLab); };
-  el.querySelectorAll('[data-up]').forEach(b => b.onclick = () => {
-    const k = b.dataset.up, l = pwLvl(k), c = PW_COST[l + 1], goods = PW_GOODS[k][l + 1];
-    if (S.coins < c.coins || S.gems < (c.gems || 0)) { toast('Not enough coins or gems yet!'); return; }
-    if (!have(goods)) { toast('You need more farm goods for this upgrade!'); return; }
-    S.coins -= c.coins; S.gems -= c.gems || 0; for (const [r, q] of Object.entries(goods)) S.res[r] -= q;
-    S.pw[k] = l + 1; saveGame(); updateTop();
-    SFX.levelUp(); confetti(120); toast(`${PW[k].name} is now level ${l + 1}!`); openLab();
-  });
-};
 
 // ---------- FARM PERKS: permanent puzzle bonuses from your farm level ----------
 const FARM_PERKS = [
@@ -6939,67 +6778,7 @@ totalStickers = STICKER_SETS.reduce((a, s) => a + s.items.length, 0);
 const RARITY = {};
 for (const s of STICKER_SETS) s.items.forEach((k, i) => (RARITY[k] = s.rare ? 'gold' : i >= s.items.length - 2 ? 'rare' : 'common'));
 const STAR_VAL = { common: 1, rare: 3, gold: 10 }, STAR_COST = { common: 10, rare: 30, gold: 80 };
-rollSticker = function () {
-  const t = rnd(), rar = t < 0.03 ? 'gold' : t < 0.23 ? 'rare' : 'common';
-  return pick(Object.keys(RARITY).filter(k => RARITY[k] === rar));
-};
 function checkSets() { return STICKER_SETS.filter(s => !S.setsDone[s.id] && s.items.every(k => S.stk[k])); }
-openPack = function () {
-  if (!S.packs) return;
-  S.packs--;
-  const pulls = [rollSticker(), rollSticker(), rollSticker()];
-  let stars = 0;
-  const cards = pulls.map((k, i) => {
-    const isNew = !S.stk[k], rar = RARITY[k];
-    S.stk[k] = (S.stk[k] || 0) + 1;
-    if (!isNew) stars += STAR_VAL[rar];
-    return `<div class="pcardS r-${rar}" style="animation-delay:${0.25 + i * 0.35}s">${img(k, '', 160)}${rar !== 'common' ? `<span class="rtag ${rar}">${rar === 'gold' ? 'GOLD' : 'RARE'}</span>` : ''}${isNew ? '<span class="newtag stk">NEW</span>' : `<span class="dupetag">+${STAR_VAL[rar]} ${img('star', '', 64)}</span>`}</div>`;
-  }).join('');
-  S.sstars += stars;
-  const finished = checkSets();
-  saveGame(); updateTop(); refreshSide();
-  SFX.make(); [0, 1, 2].forEach(i => setTimeout(() => SFX.star(i), (250 + i * 350) * TIME_SCALE));
-  if (pulls.some(k => RARITY[k] === 'gold')) setTimeout(() => { SFX.levelUp(); confetti(200); }, 1100);
-  const el = popup(`<div class="ribbon stk">Sticker Pack!</div><div class="packRow">${cards}</div>${stars ? `<div class="sub small">Duplicates turned into ${stars} sticker stars</div>` : ''}
-    <div class="btns">${S.packs ? `<button class="btn orange" data-more>Open another (${S.packs})</button>` : ''}<button class="btn" data-ok>Collect</button></div>`);
-  setTimeout(() => confetti(80), 900);
-  const after = () => {
-    if (finished.length) {
-      const s = finished[0]; S.setsDone[s.id] = 1;
-      const chips = grant(s.rare ? BOSS_SET_REW : SET_REW); SFX.win(); confetti(240);
-      ask(`<div class="ribbon green stk">Set Complete!</div><div class="sub">${s.name}</div><div class="setDone">${s.items.map(k => img(k, '', 112)).join('')}</div><div class="rewards">${chips}</div>`, [{ label: 'Amazing!', v: 'ok' }]).then(openBook);
-    } else openBook();
-  };
-  const more = el.querySelector('[data-more]'); if (more) more.onclick = () => { SFX.click(); if (finished.length) after(); else openPack(); };
-  el.querySelector('[data-ok]').onclick = () => { SFX.click(); after(); };
-};
-const _openBookU15 = openBook;
-openBook = function () {
-  if (!featOn('book')) { toast(`The Sticker Book unlocks at level ${FEAT.book.lvl}!`); return; }
-  const sets = STICKER_SETS.map(s => {
-    const got = s.items.filter(k => S.stk[k]).length, done = S.setsDone[s.id];
-    return `<div class="sset ${done ? 'done' : ''}"><div class="ssh"><b>${s.name}</b><span>${got}/${s.items.length}</span>${done ? `<i class="ck">${SVG.check}</i>` : `<span class="srw">${img('gem', '', 48)}${(s.rare ? BOSS_SET_REW : SET_REW).gems}</span>`}</div>
-      <div class="sgrid">${s.items.map(k => `<button class="stkr r-${RARITY[k]} ${S.stk[k] ? '' : 'miss'}" data-k="${k}">${img(k, '', 112)}${S.stk[k] > 1 ? `<span class="sx">x${S.stk[k]}</span>` : ''}</button>`).join('')}</div></div>`;
-  }).join('');
-  const el = popup(`<button class="xbtn" data-x>${SVG.close}</button><div class="ribbon green stk">Sticker Book</div>
-    <div class="sub small">${stickerCount()} of ${totalStickers} stickers &middot; <span class="sstar">${img('star', '', 64)} ${S.sstars} sticker stars</span></div>
-    <div class="sub small">Tap a missing sticker to trade stars for it. Rare and gold stickers are borders in blue and gold.</div>
-    ${S.packs ? `<div class="btns"><button class="btn big orange" data-open>${img('pack', 'bi', 64)} Open pack (${S.packs})</button></div>` : ''}
-    <div class="book">${sets}</div>`, 'wide');
-  el.querySelector('[data-x]').onclick = () => { SFX.click(); closePop(); };
-  const ob = el.querySelector('[data-open]'); if (ob) ob.onclick = () => { SFX.click(); openPack(); };
-  el.querySelectorAll('.stkr.miss').forEach(b => b.onclick = async () => {
-    const k = b.dataset.k, rar = RARITY[k], cost = STAR_COST[rar];
-    SFX.click();
-    if (S.sstars < cost) { toast(`This ${rar} sticker costs ${cost} sticker stars. You have ${S.sstars}.`); return; }
-    const v = await ask(`<div class="ribbon stk">Trade Stars?</div><div class="introImg">${img(k, '', 180)}</div><p>Get this ${rar} sticker for <b>${cost} sticker stars</b>?</p>`, [{ label: 'No', v: 'no', cls: 'gray' }, { label: 'Trade', v: 'yes' }]);
-    if (v !== 'yes') return openBook();
-    S.sstars -= cost; S.stk[k] = 1; saveGame(); SFX.make(); confetti(100);
-    const fin = checkSets();
-    if (fin.length) { const s = fin[0]; S.setsDone[s.id] = 1; const chips = grant(s.rare ? BOSS_SET_REW : SET_REW); SFX.win(); await ask(`<div class="ribbon green stk">Set Complete!</div><div class="sub">${s.name}</div><div class="rewards">${chips}</div>`, [{ label: 'Amazing!', v: 'ok' }]); }
-    openBook();
-  });
-};
 
 // ---------- WHAT'S NEW ----------
 function whatsNew15() {
@@ -7434,7 +7213,6 @@ Object.assign(COS.frame, {
   tower: { name: 'Tower Ring', earn: 'Tower floor 20' },
 });
 EXCHANGE.push({ gems: 150, give: { coins: 6000 } }, { coins: 5000, give: { gems: 15 } });
-const _dealToday15 = dealToday;
 dealToday = function () {
   const R = mulberry32(dayNum() * 31 + 7), list = [];
   for (const cat of Object.keys(COS)) for (const k of Object.keys(COS[cat])) if (!COS[cat][k].free && !COS[cat][k].earn && !cosOwned(cat, k)) list.push([cat, k]);
@@ -7777,6 +7555,12 @@ function spMap(mh, mv, sq, size) {
 }
 const spGift = b => (b === 'bee' && !spOK('bee')) || (b === 'bomb' && !spOK('bomb')) || ((b === 'rainbow' || b === 'rain') && !spOK('rain')) ? 'rocket' : b;
 const BOOST_SP = { rocket: 'rocket', bomb: 'bomb', rainbow: 'rain' };
+const SP_KEY = { rh: 'rocket', rv: 'rocket', bee: 'bee', bomb: 'bomb', rain: 'rain', melon: 'melon' };
+const spPick = list => { const ok = list.filter(s => spOK(SP_KEY[s])); return pick(ok.length ? ok : ['rh', 'rv']); };
+// boosters and tools you haven't unlocked yet turn into something you can use
+const ITEM_GATE = { bomb: () => spOK('bomb'), rainbow: () => spOK('rain'), tractor: () => toolOK('tractor'), glove: () => toolOK('glove'), duster: () => toolOK('duster') };
+const itemSub = k => (ITEM_GATE[k] && !ITEM_GATE[k]() ? (['tractor', 'glove', 'duster'].includes(k) ? 'shovel' : 'rocket') : k);
+function gateItems(items) { if (!items) return items; const o = {}; for (const [k, n] of Object.entries(items)) { const s = itemSub(k); o[s] = (o[s] || 0) + n; } return o; }
 FEATURES.push(
   { k: 'sp_bee', lvl: SP_UNLOCK.bee, icon: 'bee', name: 'New Power-Up: Busy Bee', text: 'Match fruit in a 2x2 square to make a Busy Bee. It flies straight to whatever you still need!' },
   { k: 'tractor', lvl: TOOL_UNLOCK.tractor, icon: 'tractor', name: 'New Booster: Tractor', text: 'Tap the Tractor button in a level, then tap a row to plow the whole thing. Cook more in your farm Kitchen.' },
@@ -7806,20 +7590,23 @@ const RECIPE_GATE = { bomb: () => spOK('bomb'), rainbow: () => spOK('rain'), tra
 Object.assign(BLD, { planter: { name: 'Seed Planter', after: 0, flvl: 7, max: 1, cost: [1500], desc: 'Replants every field you harvest with the same crop, using your seeds or buying more. Pair it with the Farmhand and your farm runs itself!' } });
 BUILD_CATS[2][3].push('planter');
 const plantOK = () => countB('planter') > 0;
-function plantTile(i, k, quiet) {
+function plantTile(i, k, quiet, mode) {
   const x = S.farm.tiles[i], c = CROPS[k];
   if (!x || !isF(x) || x.crop || S.flvl < (c.flvl || 1)) return false;
-  if (S.seeds[k] > 0) S.seeds[k]--;
-  else if (S.farm.auto.buy !== false && S.coins >= c.cost) S.coins -= c.cost;
+  if (S.seeds[k] > 0 && mode !== 'buy') S.seeds[k]--;
+  else if (mode !== 'seeds' && (mode === 'buy' || S.farm.auto.buy !== false) && S.coins >= c.cost) S.coins -= c.cost;
   else return false;
   const gh = x.b === 'greenhouse';
   Object.assign(x, { crop: k, t0: Date.now(), dur: c.time * 1000 * (gh ? 0.6 : 1) * seasonMul(k) * growMul16(), watered: gh });
   if (!quiet && CUR === 'scrFarm') refreshTile(i);
   return true;
 }
+const emptyFields = () => S.farm.tiles.map((x, i) => (x && isF(x) && !x.crop && Math.floor(i / FCOLS) < S.farm.rows ? i : -1)).filter(i => i >= 0);
+// "All" plants only from the seeds you have; with no seeds it buys them, only as many as you can afford
 function plantEverywhere(k) {
   let n = 0;
-  S.farm.tiles.forEach((x, i) => { if (x && isF(x) && !x.crop && Math.floor(i / FCOLS) < S.farm.rows && plantTile(i, k)) n++; });
+  const mode = S.seeds[k] > 0 ? 'seeds' : 'buy';
+  for (const i of emptyFields()) { if (!plantTile(i, k, false, mode)) break; n++; }
   saveGame(); renderInv(); updateTop();
   return n;
 }
@@ -7907,6 +7694,25 @@ function winEncore() {
   el.querySelector('[data-m]').onclick = () => { SFX.click(); quitToMap(); };
 }
 
+// ---------- UNLOCK POPUPS SHOW RIGHT AWAY: "Next" waits for them before the next level ----------
+function mapQueuePending() {
+  if (u7Pending() || S.ver < 19 || S.lucky > 0 || raceOver()) return true;
+  if (dailyReady() && featOn('gift') && !show.dailyShown) return true;
+  for (let k = 0; regionDone(k); k++) if (!S.rch[k] || (!S.crown[k] && regionCrown(k))) return true;
+  return false;
+}
+async function openPreWhenClear(n) {
+  if (!mapQueuePending()) return openPre(n);
+  if (!UNL_BUSY) checkUnlocks();
+  let calm = 0;
+  for (let t = 0; t < 600 && CUR === 'scrMap'; t++) {
+    await new Promise(r => setTimeout(r, 100));
+    calm = !UNL_BUSY && !$('#pop').classList.contains('on') ? calm + 1 : 0;
+    if (calm >= 7) break;
+  }
+  if (CUR === 'scrMap' && !$('#pop').classList.contains('on')) openPre(n);
+}
+
 // ---------- WHAT'S NEW ----------
 function whatsNew18() {
   const items = [['bee', 'Discover Power-Ups', 'New players unlock power-ups and boosters one by one as they climb the map'], ['star', 'Premium Boosters', 'Boosters you bring into a level arrive one Lab level stronger, and two of them land side by side for an instant combo'], ['planter', 'Seed Planter', 'A new farm building that replants every field you harvest'], ['carrot', 'Plant Everywhere', 'Fill every empty field with one tap'], ['balloons', 'Gift Balloons', 'Pop the balloons that float by for little surprises'], ['challenge', 'Daily Encore', 'Beat the Daily Challenge to unlock a tougher bonus puzzle']];
@@ -7940,11 +7746,12 @@ function u18Boot() {
   const _op = openPlant;
   openPlant = i => {
     _op(i);
-    const empty = S.farm.tiles.filter((x, j) => x && isF(x) && !x.crop && Math.floor(j / FCOLS) < S.farm.rows).length;
+    const empty = emptyFields().length;
     if (empty < 2) return;
     $$('#pop [data-plant]').forEach(b => {
-      const k = b.dataset.plant;
-      b.insertAdjacentHTML('afterend', `<button class="btn sm blue allBtn" data-all="${k}">All</button>`);
+      const k = b.dataset.plant, s = S.seeds[k] || 0, n = s > 0 ? Math.min(s, empty) : Math.min(empty, Math.floor(S.coins / CROPS[k].cost));
+      if (n < 2) return;
+      b.insertAdjacentHTML('afterend', `<button class="btn sm ${s > 0 ? 'blue' : 'orange'} allBtn" data-all="${k}">${s > 0 ? `All ${n}` : `${n} for ${img('coin', 'mini', 48)}${n * CROPS[k].cost}`}</button>`);
     });
     $$('#pop [data-all]').forEach(b => b.onclick = () => {
       const n = plantEverywhere(b.dataset.all);
@@ -7982,6 +7789,105 @@ function u18Boot() {
 
 // early levels re-tuned for the new power-up unlock order
 for (const [n, d] of [[6, 2], [8, 2], [15, 2], [25, 2], [43, 1], [44, 1]]) if (HAND[n - 1]) HAND[n - 1].moves += d;
+
+// ================= UPDATE 19: board shapes, two-part levels, regional boards, cleanup =================
+function ensureU19() {
+  if (S.lvl <= 1 && !Object.keys(S.stars).length) S.ver = 19;
+}
+
+// ---------- BOARD SHAPES (each column stays one solid piece so fruit always falls cleanly) ----------
+const SHAPES = {
+  diamond: (c, m, R) => { const d = Math.abs(c - m); return [Math.max(0, d - 1), Math.max(0, d - 1)]; },
+  pyramid: (c, m) => [Math.abs(c - m), 0],
+  vase: (c, m) => [0, Math.max(0, Math.abs(c - m) - 1)],
+  castle: (c, m) => [c % 2 === (Math.round(m) % 2) ? 0 : 1, 0],
+  wave: c => [Math.round(1 + Math.sin(c * 0.95)), Math.round(1 + Math.cos(c * 0.95))],
+  islands: (c, m) => (Math.abs(c - m) < 0.6 ? [99, 0] : [0, 0]),
+  towers: (c, m) => (Math.abs(c - m) <= 1 ? [3, 0] : [0, 0]),
+  heart: (c, m) => { const d = Math.abs(c - m); return [d < 0.6 ? 1 : d <= 2 ? 0 : 1, Math.max(0, Math.round(d) - 1)]; },
+  bowl: (c, m) => [0, Math.max(0, 2 - Math.round(Math.abs(c - m) / 1.5))],
+};
+const SHAPE_KEYS = Object.keys(SHAPES);
+function boardShape(g, rows, cols, seed) {
+  const R = mulberry32(seed * 131 + 7);
+  if (R() < 0.3) return null;
+  const k = SHAPE_KEYS[Math.floor(R() * SHAPE_KEYS.length)], m = (cols - 1) / 2;
+  const tops = [], bots = [];
+  for (let c = 0; c < cols; c++) { const [t, b] = SHAPES[k](c, m, R); tops.push(Math.min(rows, t)); bots.push(b); }
+  let open = 0;
+  for (let c = 0; c < cols; c++) open += Math.max(0, rows - tops[c] - bots[c]);
+  if (open < cols * rows * 0.62) return null;
+  for (let c = 0; c < cols; c++) for (let r = 0; r < rows; r++) if (r < tops[c] || r >= rows - bots[c]) g[r][c] = 'x';
+  return k;
+}
+
+// ---------- TWO-PART LEVELS: clear one section, the board slides away, finish the next ----------
+const isTwoPart = n => typeof n === 'number' && n > 70 && n % 10 !== 0 && n % 25 !== 0 && (n % 10 === 3 || n % 10 === 7);
+function partDef(n) {
+  const d = Object.assign({}, genLevel(n + 1000, n * 31 + 5));
+  d.intro = []; delete d.hard;
+  d.bonus = Math.max(9, Math.round(d.moves * 0.42));
+  return d;
+}
+function withParts(def, n) {
+  if (!isTwoPart(n) || def.parts) return def;
+  def.parts = [partDef(n)];
+  return def;
+}
+async function nextPart() {
+  const keep = { n: G.n, def: G.def, moves: G.moves, max: G.maxMoves, score: G.score, stage: G.stage || 1, expert: G.expert, gold: G.goldCoins || 0, juice: G.juice, jr: G.juiceReady };
+  const sd = keep.def.parts[keep.stage - 1];
+  G.busy = true;
+  word(`Part ${keep.stage} clear!`); SFX.levelUp(); confetti(90); await wait(700); if (!G) return;
+  for (const c of G.cells) if (c.piece && !c.piece.dead) { c.piece.path = [{ x: c.c, y: -G.rows - 2 }]; c.piece.spd = 10; }
+  SFX.whoosh(); await wait(520); if (!G) return;
+  LEVEL_CACHE.__part = Object.assign({}, sd, { tick: keep.def.tick });
+  buildLevel('__part');
+  Object.assign(G, { n: keep.n, def: Object.assign({}, sd, { parts: keep.def.parts, partOf: keep.def }), moves: keep.moves + sd.bonus, maxMoves: keep.max + sd.bonus, score: keep.score, stage: keep.stage + 1, expert: keep.expert, goldCoins: keep.gold });
+  buildHUD(); G.juice = keep.juice; G.juiceReady = keep.jr; updateJuice(); layout();
+  await allIdle(); if (!G) return;
+  word(`Part ${G.stage} of ${keep.def.parts.length + 1}`); floatText(`+${sd.bonus} moves`, VW / 2, L.y0 + L.bh * 0.58, Math.min(30, VW * 0.07), '#b7f59a', 'banner');
+  await wait(600); if (!G) return;
+  if (!findMove()) await shuffleBoard();
+  G.busy = false; G.idle = 0;
+}
+
+// ---------- REGIONAL BOARD COLORS (when you use the classic wood board) ----------
+const REGION_BOARD = {
+  'Orchard Hills': { frame: ['#e0bc7a', '#ae7c3e', '#7a5022'], base: '#eef3d6', t1: '#f8fbe8', t2: '#eef4dc' },
+  'Pumpkin Patch': { frame: ['#ffc472', '#e2842c', '#a8521a'], base: '#fff0d4', t1: '#fff8e8', t2: '#ffefd2' },
+  'Frosty Fields': { frame: ['#eef8ff', '#a8d0f0', '#6a98c8'], base: '#e6f2fc', t1: '#f6fbff', t2: '#e4f0fb' },
+  'Berry Bayou': { frame: ['#b8ead8', '#5ab89a', '#2a7a68'], base: '#e2f4ee', t1: '#f2fbf8', t2: '#e0f3ec' },
+  'Mushroom Woods': { frame: ['#ecbca4', '#c4725a', '#8a3a2a'], base: '#f6ece4', t1: '#fff8f2', t2: '#f4e8de' },
+  'Sunny Shore': { frame: ['#ffe8b0', '#e6be6c', '#b8883a'], base: '#fff4d8', t1: '#fffbec', t2: '#fff2d2' },
+  'Candy Canyon': { frame: ['#ffc8e6', '#ff8ac8', '#d85aa8'], base: '#ffe6f3', t1: '#fff2f9', t2: '#ffe2f0' },
+  'Crystal Caves': { frame: ['#e4dcff', '#a898e8', '#6a58b8'], base: '#ece8ff', t1: '#f8f6ff', t2: '#e8e4fc' },
+  'Cactus Mesa': { frame: ['#f2c494', '#c8783a', '#8a4a1a'], base: '#fbeedd', t1: '#fff8ee', t2: '#f8ead6' },
+};
+
+const regionBoard = () => (cosOn('board') === 'wood' && G && typeof G.n === 'number' ? REGION_BOARD[regionOf(G.n).name] : null);
+
+// ---------- WHAT'S NEW ----------
+function whatsNew19() {
+  const items = [['map', 'Two-Part Levels', 'Some levels have a second section. Clear the first and the board slides on to the next!'], ['palette', 'Board Shapes', 'Diamonds, hearts, castles, islands, towers and more on levels after 70'], ['scenery', 'Regional Boards', 'Every region paints the classic board in its own colors'], ['bolt', 'Fixes', 'Unlock popups now show right away, and locked power-ups no longer sneak out of chests or the juice jar']];
+  return ask(`<div class="ribbon stk">What's New</div><div class="sub">Update 19</div><div class="wnew">${items.map(([ic, t, d]) => `<div class="wn">${img(ic, '', 112)}<div><b>${t}</b><span>${d}</span></div></div>`).join('')}</div>`, [{ label: "Let's go!", v: 'ok' }]);
+}
+
+// ---------- BOOT ----------
+function u19Boot() {
+  const _gl = getLevel; getLevel = n => { const d = _gl(n); return typeof n === 'number' ? withParts(d, n) : d; };
+  const _fin = finale; finale = () => (G && G.def.parts && (G.stage || 1) <= G.def.parts.length ? nextPart() : _fin());
+  const _hud = buildHUD; buildHUD = () => { _hud(); if (G && G.def.parts) $('#hudLvl').textContent = `Level ${G.n} · ${G.stage || 1}/${G.def.parts.length + 1}`; };
+  const _pre = openPre;
+  openPre = n => {
+    _pre(n);
+    const def = typeof n === 'number' ? getLevel(n) : null, box = $('#pop .goalRow');
+    if (def && def.parts && box && !$('#pop .gateImg')) box.insertAdjacentHTML('beforebegin', `<div class="partTag">${img('map', '', 48)} Two-part level: these goals first, then a second board with bonus moves</div>`);
+  };
+  const _bm = buildMap;
+  buildMap = () => { _bm(); $$('#mapInner .node').forEach(nd => { const n = +nd.dataset.n; if (isTwoPart(n) && !nd.classList.contains('boss') && !nd.querySelector('.ptwo')) nd.insertAdjacentHTML('beforeend', '<span class="ptwo stk">2</span>'); }); };
+  const _os = openSettings; openSettings = () => { _os(); const v = $('#pop .ver'); if (v) v.textContent = 'Harvest Pop · Update 19'; };
+}
 
 // ================= TITLE SCREEN: living farm scene with poppable fruit =================
 const TT = { cv: null, cx: null, W: 0, H: 0, d: 1, bg: null, spr: {}, fruits: [], parts: [], t: 0, spawn: 0, tractor: -1, tractorT: 4, birds: [], pops: 0, combo: 0, comboT: 0, last: 0, on: false };
@@ -9046,7 +8952,7 @@ async function juiceBurst() {
   await wait(600); if (!G) return;
   if (live(cell) && cell.piece.k === 'f') {
     cell.piece.dead = true;
-    cell.piece = newPiece('s', { sp: pick(['rh', 'rv', 'bomb', 'bee', 'bomb', 'rh']), x: cell.c, y: cell.r, born: 0 });
+    cell.piece = newPiece('s', { sp: spPick(['rh', 'rv', 'bomb', 'bee', 'bomb', 'rh']), x: cell.c, y: cell.r, born: 0 });
     burst(p.x, p.y, '#ffb547', 16, { star: true });
   }
   await wait(250);
@@ -9886,13 +9792,13 @@ function win() {
   S.packs = (S.packs || 0) + packs; festPts(tokens);
   const x8 = u8Win(n, boss, first, stars); u16Win(x8.chips);
   S.gems += gems;
-  S.coins += coins; seeds.forEach(k => S.seeds[k]++); S.items.shovel += shovels; S.items.rainbow += rainbows;
+  S.coins += coins; seeds.forEach(k => S.seeds[k]++); S.items.shovel += shovels; const rbItem = itemSub('rainbow'); S.items[rbItem] += rainbows;
   saveGame();
   SFX.win(); vibrate(40);
   const rw = [`<div class="rw">${img('coin', '', 112)}<span class="stk">+${coins}</span></div>`]
     .concat(seeds.map(k => `<div class="rw">${img('pk_' + k, '', 112)}<span class="stk sm">${CROPS[k].name}</span></div>`))
     .concat(shovels ? [`<div class="rw">${img('shovel', '', 112)}<span class="stk">+${shovels}</span></div>`] : [])
-    .concat(rainbows ? [`<div class="rw">${img('rain', '', 112)}<span class="stk">+1</span></div>`] : [])
+    .concat(rainbows ? [`<div class="rw">${img(ITEMS[rbItem].icon, '', 112)}<span class="stk">+1</span></div>`] : [])
     .concat(gems ? [`<div class="rw">${img('gem', '', 112)}<span class="stk">+${gems}</span></div>`] : [])
     .concat(packs ? [`<div class="rw">${img('pack', '', 112)}<span class="stk">+${packs}</span></div>`] : [])
     .concat([`<div class="rw">${img('token', '', 112)}<span class="stk">+${tokens}</span></div>`]).concat(x8.chips);
@@ -9907,7 +9813,7 @@ function win() {
   setTimeout(() => confetti(stars === 3 || boss || golden ? 200 : 110), 200);
   [1, 2, 3].forEach(s => { if (s <= stars) setTimeout(() => SFX.star(s), (200 + s * 280) * TIME_SCALE); });
   el.querySelector('[data-m]').onclick = () => { SFX.click(); quitToMap(); };
-  el.querySelector('[data-n]').onclick = () => { SFX.click(); G = null; closePop(); show('scrMap'); openPre(n + 1); };
+  el.querySelector('[data-n]').onclick = () => { SFX.click(); G = null; closePop(); show('scrMap'); openPreWhenClear(n + 1); };
 }
 function winDaily() {
   const first = !chalDone();
@@ -9944,7 +9850,7 @@ function lose() {
 
 // ---------- BOOT ----------
 function boot() {
-  loadGame(); ensureFarm(); ensureMeta(); ensureU4(); ensureU5(); ensureU7(); ensureU8(); ensureU9(); ensureU10(); ensureU11(); ensureU13(); ensureU14(); ensureU15(); ensureU16(); ensureU17(); ensureU18(); tickOrders();
+  loadGame(); ensureFarm(); ensureMeta(); ensureU4(); ensureU5(); ensureU7(); ensureU8(); ensureU9(); ensureU10(); ensureU11(); ensureU13(); ensureU14(); ensureU15(); ensureU16(); ensureU17(); ensureU18(); ensureU19(); tickOrders();
   titleSetup();
   const cl = sticker((c, z) => union(c, [[0.25, 0.6, 0.2], [0.45, 0.45, 0.25], [0.7, 0.58, 0.2], [0.5, 0.66, 0.2]].map(([x, y, r]) => () => circ(c, z * x, z * y, z * r)), '#fff', z * 0.03), 160, { shadow: false }).c.toDataURL();
   $$('#mapClouds i').forEach(i => (i.style.backgroundImage = `url(${cl})`));
@@ -9955,7 +9861,7 @@ function boot() {
   $('#tractorImg').src = icon('tractor', 112);
   $('#coinImg').src = icon('coin', 96); $('#tabMapImg').src = icon('map', 112); $('#tabFarmImg').src = icon('barn', 112); $('#shovelImg').src = icon('shovel', 112);
   $('#gemImg').src = icon('gem', 96); $('#btnMusic').innerHTML = img('music', '', 96);
-  u7Boot(); u8Boot(); u9Boot(); u10Boot(); u11Boot(); u12Boot(); u13Boot(); u14Boot(); u15Boot(); u16Boot(); u17Boot(); u18Boot();
+  u7Boot(); u8Boot(); u9Boot(); u10Boot(); u11Boot(); u12Boot(); u13Boot(); u14Boot(); u15Boot(); u16Boot(); u17Boot(); u18Boot(); u19Boot();
   $('#btnPlay').onclick = () => { SFX.init(); SFX.resume(); SFX.click(); MUSIC.start(); show('scrMap'); };
   $('#tprof').onclick = () => { SFX.init(); SFX.resume(); MUSIC.start(); SFX.click(); openProfile(); };
   $$('[data-tg]').forEach(b => b.onclick = () => { SFX.init(); SFX.resume(); MUSIC.start(); SFX.click(); const k = b.dataset.tg; if (k === 'farm') show('scrFarm'); else if (k === 'book') openBook(); else openSettings(); });
